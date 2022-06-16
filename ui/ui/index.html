@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>k8simage-operator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            font-size: 14px;
+            color: #333;
+        }
+
+        .title {
+            text-align: center;
+            font-size: 40px;
+            font-family: fantasy;
+        }
+
+        #box {
+            margin: 10px auto;
+            padding: 0 20px;
+        }
+
+        #tb {
+            width: 100%;
+            border-spacing: 0;
+            border-left: 1px solid #999;
+            border-top: 1px solid #999;
+            white-space: pre;
+        }
+
+        #tb td,
+        #tb th {
+            border-right: 1px solid #999;
+            border-bottom: 1px solid #999;
+            padding: 0 6px;
+            line-height: 30px;
+        }
+
+        #tb th {
+            line-height: 40px;
+            background: #7a8180;
+            color: #fff;
+            white-space: 2px;
+        }
+
+        #tb tr:hover {
+            background: #d5d0d0;
+            color: #fff;
+        }
+
+        #msg {
+            line-height: 30px;
+            padding-top: 10px;
+            text-align: center;
+            color: red;
+        }
+
+        #tb a {
+            text-decoration: none;
+            cursor: pointer;
+            background: #76bfb5;
+            color: #fff;
+            padding: 0 8px;
+            border-radius: 10px;
+            display: inline-block;
+            line-height: 20px;
+        }
+
+        #tb a:hover {
+            text-decoration: underline;
+        }
+
+
+        /* 鼠标点击时 */
+
+        .tbbox {
+            /*overflow: auto;*/
+            padding-bottom: 400px;
+        }
+
+        *::-webkit-scrollbar {
+            /*滚动条整体样式*/
+            width: 8px;
+            /*高宽分别对应横竖滚动条的尺寸*/
+            height: 8px;
+        }
+
+        *::-webkit-scrollbar-thumb {
+            /*滚动条里面小方块*/
+            border-radius: 10px;
+            box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.2);
+            background: #535353;
+        }
+
+        *::-webkit-scrollbar-track {
+            /*滚动条里面轨道*/
+            /* box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            background: #ededed; */
+        }
+
+        #handle {
+            padding-bottom: 20px;
+        }
+
+        #handle select {
+            line-height: 30px;
+            height: 30px;
+            outline: 0;
+            border: 1px solid #333;
+            border-radius: 4px;
+        }
+
+        .fileurl {
+            position: relative;
+        }
+
+        .tips {
+            position: absolute;
+            top: 0;
+            left: 80%;
+            height: 600px;
+            margin-top: -300px;
+            width: 600px;
+            background: rgb(0 0 0 / 75%);
+            padding: 14px;
+            border-radius: 8px;
+            color: #fff;
+            z-index: 10;
+            overflow: auto;
+            display: none;
+            font-size: var(--global-font-size);
+            font-family: consolas, Menlo, 'PingFang SC', 'Microsoft YaHei', sans-serif !important;
+            line-height: 1.2em;
+        }
+
+        .fileurl:hover .tips {
+            display: block;
+        }
+
+        #freshbtn {
+            line-height: 26px;
+            width: 80px;
+            outline: 0;
+            resize: both;
+            margin-left: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1 class="title">k8simage-operator</h1>
+    <div id="msg"></div>
+    <div id="box">
+        <div id="handle">
+            Namespace_Deployment: <select id="slt" onchange="sltChange()"></select>
+            <button id="freshbtn" onclick="refresh()">刷新</button>
+        </div>
+        <div class="tbbox">
+            <table id="tb">
+                <thead>
+                    <tr>
+                        <th>命名空间</th>
+                        <th>Deployment名称</th>
+                        <th>Yaml文件位置</th>
+                        <th width="80">容器ID</th>
+                        <th>容器名称</th>
+                        <th>容器镜像</th>
+                        <th width="80">是否正在运行</th>
+                        <th>创建时间</th>
+                        <th>更新时间</th>
+                        <th width="100">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="tbbody"> </tbody>
+            </table>
+        </div>
+    </div>
+    <script>
+        const data = {
+            "cert-manager_cert-manager": [{
+                "Namespace": "cert-manager",
+                "Name": "cert-manager",
+                "ContainerIndex": 0,
+                "ContainerName": "cert-manager",
+                "Image": "quay.io/jetstack/cert-manager-controller:v1.7.1",
+                "IsNowRun": true,
+                "Yamlfile": "",
+                "created_at": "2022-06-10T16:36:13.136+08:00",
+                "update_at": "2022-06-13T10:59:56.062+08:00"
+            }],
+            "cert-manager_cert-manager-cainjector": [{
+                "Namespace": "cert-manager",
+                "Name": "cert-manager-cainjector",
+                "ContainerIndex": 0,
+                "ContainerName": "cert-manager",
+                "Image": "quay.io/jetstack/cert-manager-cainjector:v1.7.1",
+                "IsNowRun": true,
+                "Yamlfile": "",
+                "created_at": "2022-06-10T16:36:13.096+08:00",
+                "update_at": "2022-06-13T10:59:56.228+08:00"
+            }],
+            "cert-manager_cert-manager-webhook": [{
+                "Namespace": "cert-manager",
+                "Name": "cert-manager-webhook",
+                "ContainerIndex": 0,
+                "ContainerName": "cert-manager",
+                "Image": "quay.io/jetstack/cert-manager-webhook:v1.7.1",
+                "IsNowRun": true,
+                "Yamlfile": "",
+                "created_at": "2022-06-10T16:36:13.197+08:00",
+                "update_at": "2022-06-13T10:59:56.199+08:00"
+            }],
+            "default_nginxredis": [{
+                "Namespace": "default",
+                "Name": "nginxredis",
+                "ContainerIndex": 0,
+                "ContainerName": "nginx",
+                "Image": "nginx",
+                "IsNowRun": false,
+                "Yamlfile": "/root/1.23.4/test-k8s-nginx.yaml",
+                "created_at": "2022-06-10T16:44:43.203+08:00",
+                "update_at": "2022-06-10T16:44:43.203+08:00"
+            },
+            {
+                "Namespace": "default",
+                "Name": "nginxredis",
+                "ContainerIndex": 0,
+                "ContainerName": "nginx",
+                "Image": "nginx:latest",
+                "IsNowRun": true,
+                "Yamlfile": "/root/1.23.4/test-k8s-nginx.yaml",
+                "created_at": "2022-06-10T16:46:58.288+08:00",
+                "update_at": "2022-06-13T10:59:56.124+08:00"
+            },
+            {
+                "Namespace": "default",
+                "Name": "nginxredis",
+                "ContainerIndex": 1,
+                "ContainerName": "redis",
+                "Image": "redis",
+                "IsNowRun": true,
+                "Yamlfile": "/root/1.23.4/test-k8s-nginx.yaml",
+                "created_at": "2022-06-10T16:44:43.203+08:00",
+                "update_at": "2022-06-13T10:59:56.161+08:00"
+            }
+            ],
+            "k8simage-operator-system_k8simage-operator-controller-manager": [{
+                "Namespace": "k8simage-operator-system",
+                "Name": "k8simage-operator-controller-manager",
+                "ContainerIndex": 0,
+                "ContainerName": "kube-rbac-proxy",
+                "Image": "quay.io/brancz/kube-rbac-proxy:v0.8.0",
+                "IsNowRun": true,
+                "Yamlfile": "",
+                "created_at": "2022-06-10T16:36:13.369+08:00",
+                "update_at": "2022-06-13T10:59:56.21+08:00"
+            },
+            {
+                "Namespace": "k8simage-operator-system",
+                "Name": "k8simage-operator-controller-manager",
+                "ContainerIndex": 1,
+                "ContainerName": "manager",
+                "Image": "hub.antiy.cn/wyf/k8simage-operator:v1",
+                "IsNowRun": false,
+                "Yamlfile": "",
+                "created_at": "2022-06-10T16:59:45.826+08:00",
+                "update_at": "2022-06-10T17:00:15.437+08:00"
+            },
+            {
+                "Namespace": "k8simage-operator-system",
+                "Name": "k8simage-operator-controller-manager",
+                "ContainerIndex": 1,
+                "ContainerName": "manager",
+                "Image": "hub.antiy.cn/wyf/k8simage-operator:v2",
+                "IsNowRun": false,
+                "Yamlfile": "",
+                "created_at": "2022-06-10T17:12:13.102+08:00",
+                "update_at": "2022-06-10T17:12:42.396+08:00"
+            },
+            {
+                "Namespace": "k8simage-operator-system",
+                "Name": "k8simage-operator-controller-manager",
+                "ContainerIndex": 1,
+                "ContainerName": "manager",
+                "Image": "hub.antiy.cn/wyf/k8simage-operator:v3",
+                "IsNowRun": false,
+                "Yamlfile": "",
+                "created_at": "2022-06-10T17:32:25.328+08:00",
+                "update_at": "2022-06-10T17:32:54.723+08:00"
+            },
+            {
+                "Namespace": "k8simage-operator-system",
+                "Name": "k8simage-operator-controller-manager",
+                "ContainerIndex": 1,
+                "ContainerName": "manager",
+                "Image": "hub.antiy.cn/wyf/k8simage-operator:v4",
+                "IsNowRun": true,
+                "Yamlfile": "",
+                "created_at": "2022-06-10T17:49:07.419+08:00",
+                "update_at": "2022-06-13T10:59:56.218+08:00"
+            },
+            {
+                "Namespace": "k8simage-operator-system",
+                "Name": "k8simage-operator-controller-manager",
+                "ContainerIndex": 1,
+                "ContainerName": "manager",
+                "Image": "hub.antiy.cn/wyf/k8simage-operator:v9",
+                "IsNowRun": false,
+                "Yamlfile": "",
+                "created_at": "2022-06-10T16:36:13.369+08:00",
+                "update_at": "2022-06-10T16:44:51.618+08:00"
+            }
+            ],
+            "kube-system_coredns": [{
+                "Namespace": "kube-system",
+                "Name": "coredns",
+                "ContainerIndex": 0,
+                "ContainerName": "coredns",
+                "Image": "coredns/coredns:1.8.6",
+                "IsNowRun": true,
+                "Yamlfile": "",
+                "created_at": "2022-06-10T16:36:13.451+08:00",
+                "update_at": "2022-06-13T10:59:56.094+08:00"
+            }],
+            "kube-system_nginxredis": [{
+                "Namespace": "kube-system",
+                "Name": "nginxredis",
+                "ContainerIndex": 0,
+                "ContainerName": "nginx",
+                "Image": "nginx",
+                "IsNowRun": true,
+                "Yamlfile": "/root/1.23.4/test-k8s-nginx.yaml",
+                "created_at": "2022-06-10T16:44:44.535+08:00",
+                "update_at": "2022-06-13T10:59:56.294+08:00"
+            },
+            {
+                "Namespace": "kube-system",
+                "Name": "nginxredis",
+                "ContainerIndex": 1,
+                "ContainerName": "redis",
+                "Image": "redis",
+                "IsNowRun": true,
+                "Yamlfile": "/root/1.23.4/test-k8s-nginx.yaml",
+                "created_at": "2022-06-10T16:44:44.535+08:00",
+                "update_at": "2022-06-13T10:59:56.302+08:00"
+            }
+            ],
+            "registry-operator-system_registry": [{
+                "Namespace": "registry-operator-system",
+                "Name": "registry",
+                "ContainerIndex": 0,
+                "ContainerName": "registry",
+                "Image": "registry:2",
+                "IsNowRun": true,
+                "Yamlfile": "",
+                "created_at": "2022-06-10T16:36:13.319+08:00",
+                "update_at": "2022-06-13T10:59:56.314+08:00"
+            }],
+            "registry-operator-system_registry-operator-controller-manager": [{
+                "Namespace": "registry-operator-system",
+                "Name": "registry-operator-controller-manager",
+                "ContainerIndex": 0,
+                "ContainerName": "kube-rbac-proxy",
+                "Image": "quay.io/brancz/kube-rbac-proxy:v0.8.0",
+                "IsNowRun": true,
+                "Yamlfile": "",
+                "created_at": "2022-06-10T16:36:13.499+08:00",
+                "update_at": "2022-06-13T10:59:56.277+08:00"
+            },
+            {
+                "Namespace": "registry-operator-system",
+                "Name": "registry-operator-controller-manager",
+                "ContainerIndex": 1,
+                "ContainerName": "manager",
+                "Image": "hub.antiy.cn/wyf/registry-operator:v16",
+                "IsNowRun": true,
+                "Yamlfile": "",
+                "created_at": "2022-06-10T16:36:13.499+08:00",
+                "update_at": "2022-06-13T10:59:56.286+08:00"
+            }
+            ],
+            "registry-operator-system_registryclean": [{
+                "Namespace": "registry-operator-system",
+                "Name": "registryclean",
+                "ContainerIndex": 0,
+                "ContainerName": "elasticsearch",
+                "Image": "elasticsearch:7.8.1",
+                "IsNowRun": true,
+                "Yamlfile": "",
+                "created_at": "2022-06-10T16:36:13.236+08:00",
+                "update_at": "2022-06-13T10:59:56.323+08:00"
+            },
+            {
+                "Namespace": "registry-operator-system",
+                "Name": "registryclean",
+                "ContainerIndex": 1,
+                "ContainerName": "registryclean",
+                "Image": "huisebug/dockerregistryclean:latest",
+                "IsNowRun": true,
+                "Yamlfile": "",
+                "created_at": "2022-06-10T16:36:13.236+08:00",
+                "update_at": "2022-06-13T10:59:56.353+08:00"
+            }
+            ]
+        }
+
+        //append
+        function appendHtml(data, sign) {
+            let html = '';
+            let htmlSelect = '<option>all</option>'
+            Object.keys(data).forEach((i, index) => {
+                data[i].forEach((item, sIndex) => {
+                    const signKey = 'msg' + index + sIndex
+                    item.signKey = signKey
+                    html += "<tr>";
+                    html += "   <td>" + item.Namespace + "</td>";
+                    html += "   <td>" + item.Name + "</td>";
+                    html += "   <td class='fileurl' onmouseenter='fileLoad(" + JSON.stringify(item) + ")'>" + item.Yamlfile + (item.Yamlfile ? "<div class='tips' id='" + signKey + "'></div>" : "") + "</td>";
+                    html += "   <td>" + item.ContainerIndex + "</td>";
+                    html += "   <td>" + item.ContainerName + "</td>";
+                    html += "   <td>" + item.Image + "</td>";
+                    html += "   <td align='center'>" + item.IsNowRun + "</td>";
+                    html += "   <td>" + item.created_at.slice(0, 19).replace('T', ' ') + "</td>";
+                    html += "   <td>" + item.update_at.slice(0, 19).replace('T', ' ') + "</td>";
+                    html += "   <td align='center'><a href='#' onClick='updateFn(" + JSON.stringify(item) + ")'>update</a><a href='#' onClick='deleteFn(" + JSON.stringify(item) + ")' style='margin-left:10px;background:#d54848'>delete</a></td>";
+                    html += "</tr>";
+                })
+                htmlSelect += "<option>" + i + "</option>"
+            })
+
+            document.getElementById('tbbody').innerHTML = html
+            if (sign == 1) {
+                document.getElementById('slt').innerHTML = htmlSelect
+            }
+        }
+
+        //fileLoad
+        let timer = null;
+        function fileLoad(item) {
+            if (!item.Yamlfile) return
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                fetch('/api/v1/yamlfile?url=' + item.Yamlfile).then(function (response) {
+                    return response.json();
+                }).then(function (myJson) {
+                    document.getElementById(item.signKey).innerHTML = myJson.yamlfile
+                }).catch(() => {
+                })
+            }, 400)
+
+        }
+
+        //select
+        function sltChange() {
+            const val = document.getElementById('slt').value
+            if (val == 'all') {
+                sessionStorage.selectVal = ''
+                loadData()
+            } else {
+                sessionStorage.selectVal = val
+                loadSelectData(val)
+            }
+        }
+
+        //loading
+        function loadData() {
+            fetch('/api/v1/getdeploy').then(function (response) {
+                return response.json();
+            }).then(function (myJson) {
+                appendHtml(myJson, 1)
+            }).catch(() => {
+                appendHtml(data, 1);//假数据加载
+            })
+        }
+
+        //loadingSelect
+        function loadSelectData(val) {
+            fetch('/api/v1/get?table=' + val).then(function (response) {
+                return response.json();
+            }).then(function (myJson) {
+                appendHtml(myJson, 2)
+            }).catch(() => {
+                // appendHtml(data)
+            })
+        }
+
+        loadData()
+
+
+        //refresh
+        function refresh() {
+            if (sessionStorage.selectVal) {
+                loadSelectData(sessionStorage.selectVal)
+            } else {
+                loadData()
+            }
+        }
+
+
+        //update
+        function updateFn(item) {
+            if (confirm('确定要更新吗？') == true) {
+                fetch('/api/v1/update', {
+                    method: 'POST',
+                    headers: {
+                        'content-type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        Namespace: item.Namespace,
+                        Name: item.Name,
+                        ContainerName: item.ContainerName,
+                        ContainerIndex: item.ContainerIndex,
+                        ContainerImage: item.Image,
+                    })
+                }).then(function (response) {
+                    return response.json();
+                }).then(function (myJson) {
+                    // document.getElementById('msg').innerHTML = myJson.message
+                    // setTimeout(() => {
+                    //     document.getElementById('msg').innerHTML = ''
+                    // }, 5000)
+                    alert(myJson.message)
+                    refresh()
+                })
+            } else {
+                return false;
+            }
+        }
+
+
+        //delete
+        function deleteFn(item) {
+            if (confirm('确定要删除吗？') == true) {
+                fetch('/api/v1/delete', {
+                    method: 'POST',
+                    headers: {
+                        'content-type': 'application/json'
+                    },
+                    body: JSON.stringify(item)
+                }).then(function (response) {
+                    return response.json();
+                }).then(function (myJson) {
+                    alert(myJson.message)
+                    refresh()
+                    // document.getElementById('msg').innerHTML = myJson.message
+                    // setTimeout(() => {
+                    //     document.getElementById('msg').innerHTML = ''
+                    // }, 5000)
+                })
+            } else {
+                return false;
+            }
+        }
+    </script>
+</body>
+
+</html>

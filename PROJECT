@@ -1,0 +1,6 @@
+domain: huisebug.org
+layout:
+- go.kubebuilder.io/v3
+projectName: k8simage-operator
+repo: github.com/huisebug/k8simage-operator
+version: "3"

@@ -1,0 +1,305 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: system
+  labels:
+    control-plane: controller-manager
+spec:
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  replicas: 1
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        control-plane: controller-manager
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: k8s-m1
+      # securityContext:
+      #   runAsNonRoot: true
+      containers:
+      - command:
+        - /manager
+        args:
+        - --leader-elect
+        # env:
+        # - name: MYSQL_ROOT_PASSWORD
+        #   value: mysql@u214Pp178FQ
+        # - name: MYSQL_HOST
+        #   value: mysql:3371         
+        image: controller:latest
+        name: manager
+        securityContext:
+          allowPrivilegeEscalation: false
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 60
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        volumeMounts:
+        - name: yamlfile
+          mountPath: /etc/kubernetes
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler         
+      serviceAccountName: controller-manager
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - name: yamlfile
+        hostPath:
+          path: /etc/kubernetes      
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: controller-manager
+  namespace: system
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 8888
+  selector:
+    control-plane: controller-manager
+  #type: ClusterIP
+  type: NodePort
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager-mysql
+  namespace: system
+  labels:
+    control-plane: controller-manager-mysql
+spec:
+  selector:
+    matchLabels:
+      control-plane: controller-manager-mysql
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        control-plane: controller-manager-mysql
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: k8s-m1
+      containers:  
+      - image: mysql:5.7
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: mysql@u214Pp178FQ
+        name: mysql
+        ports:
+        - containerPort: 3306
+          name: mysql
+          protocol: TCP
+        readinessProbe:
+          tcpSocket:
+            port: 3306
+          initialDelaySeconds: 60
+          periodSeconds: 600
+        livenessProbe:
+          tcpSocket:
+            port: 3306
+          initialDelaySeconds: 60
+          periodSeconds: 600
+        stdin: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        tty: true
+        volumeMounts:
+        - mountPath: /var/lib/mysql
+          name: data
+          subPath: mysql
+        - mountPath: /docker-entrypoint-initdb.d
+          name: initdb
+        - mountPath: /etc/localtime
+          name: time
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler         
+      terminationGracePeriodSeconds: 10
+      volumes:
+
+      - name: data
+        hostPath:
+          path: /data/k8simage-operator/mysql    
+          type: DirectoryOrCreate     
+      - hostPath:
+          path: /etc/localtime
+        name: time               
+      - configMap:
+          defaultMode: 256
+          items:
+          - key: initdb.sh
+            mode: 511
+            path: initdb.sh
+          name: initdb
+          optional: false
+        name: initdb
+---
+apiVersion: v1
+data:
+  initdb.sh: |-
+    #!/bin/bash
+    mysql -uroot -p$MYSQL_ROOT_PASSWORD <<EOF
+    CREATE DATABASE IF NOT EXISTS k8simage DEFAULT CHARSET utf8 COLLATE utf8_general_ci;
+    EOF
+kind: ConfigMap
+metadata:
+  name: initdb
+  namespace: system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    control-plane: controller-manager-mysql
+  name: controller-manager-mysql
+  namespace: system
+spec:
+  ports:
+  - name: mysql
+    port: 3306
+    protocol: TCP
+    targetPort: 3306
+  selector:
+    control-plane: controller-manager-mysql
+  #type: ClusterIP
+  type: NodePort  
+---  
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager-ui
+  namespace: system
+  labels:
+    control-plane: controller-manager-ui
+spec:
+  selector:
+    matchLabels:
+      control-plane: controller-manager-ui
+  replicas: 1
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        control-plane: controller-manager-ui
+    spec:
+      containers:
+      - name: ui
+        #image: hub.antiy.cn/wyf/k8simage-operator-ui:latest
+        image: huisebug/k8simage-operator-ui:latest
+        imagePullPolicy: Always
+        resources:
+          requests:
+            memory: "66Mi"
+          limits:
+            memory: "212Mi"
+        readinessProbe:
+          tcpSocket:
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          tcpSocket:
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 60
+        volumeMounts:
+        - mountPath: /etc/nginx/conf.d/
+          name: conf
+      volumes:
+      - configMap:
+          defaultMode: 256
+          items:
+          - key: ui.conf
+            path: ui.conf
+          name: controller-manager-ui
+          optional: false
+        name: conf      
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    control-plane: controller-manager-ui
+  name: controller-manager-ui
+  namespace: system
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    control-plane: controller-manager-ui
+  #type: ClusterIP
+  type: NodePort
+
+--- 
+
+apiVersion: v1
+data:
+  ui.conf: |-
+    server {
+        listen       80;
+        access_log  /var/log/nginx/console.access.log  main;
+        client_max_body_size 500m;
+
+        location / {
+            root /usr/share/nginx/html/;
+            index index.html index.htm;
+        }
+
+        location ~ /api/v1/ {
+            proxy_pass http://k8simage-operator-controller-manager;
+            proxy_set_header Host $host;
+            proxy_set_header  X-Real-IP $remote_addr;
+            proxy_set_header  REMOTE-HOST $remote_addr;
+            proxy_set_header  X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+    }
+kind: ConfigMap
+metadata:
+  name: controller-manager-ui
+  namespace: system
+

@@ -1,0 +1,481 @@
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: k8simage-operator-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k8simage-operator-controller-manager
+  namespace: k8simage-operator-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: k8simage-operator-leader-election-role
+  namespace: k8simage-operator-system
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: k8simage-operator-manager-role
+rules:
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments/status
+  verbs:
+  - get
+  - patch
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: k8simage-operator-metrics-reader
+rules:
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: k8simage-operator-proxy-role
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: k8simage-operator-leader-election-rolebinding
+  namespace: k8simage-operator-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: k8simage-operator-leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: k8simage-operator-controller-manager
+  namespace: k8simage-operator-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8simage-operator-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: k8simage-operator-manager-role
+subjects:
+- kind: ServiceAccount
+  name: k8simage-operator-controller-manager
+  namespace: k8simage-operator-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8simage-operator-proxy-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: k8simage-operator-proxy-role
+subjects:
+- kind: ServiceAccount
+  name: k8simage-operator-controller-manager
+  namespace: k8simage-operator-system
+---
+apiVersion: v1
+data:
+  ui.conf: |-
+    server {
+        listen       80;
+        access_log  /var/log/nginx/console.access.log  main;
+        client_max_body_size 500m;
+
+        location / {
+            root /usr/share/nginx/html/;
+            index index.html index.htm;
+        }
+
+        location ~ /api/v1/ {
+            proxy_pass http://k8simage-operator-controller-manager;
+            proxy_set_header Host $host;
+            proxy_set_header  X-Real-IP $remote_addr;
+            proxy_set_header  REMOTE-HOST $remote_addr;
+            proxy_set_header  X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+    }
+kind: ConfigMap
+metadata:
+  name: k8simage-operator-controller-manager-ui
+  namespace: k8simage-operator-system
+---
+apiVersion: v1
+data:
+  initdb.sh: |-
+    #!/bin/bash
+    mysql -uroot -p$MYSQL_ROOT_PASSWORD <<EOF
+    CREATE DATABASE IF NOT EXISTS k8simage DEFAULT CHARSET utf8 COLLATE utf8_general_ci;
+    EOF
+kind: ConfigMap
+metadata:
+  name: k8simage-operator-initdb
+  namespace: k8simage-operator-system
+---
+apiVersion: v1
+data:
+  controller_manager_config.yaml: |
+    apiVersion: controller-runtime.sigs.k8s.io/v1alpha1
+    kind: ControllerManagerConfig
+    health:
+      healthProbeBindAddress: :8081
+    metrics:
+      bindAddress: 127.0.0.1:8080
+    webhook:
+      port: 9443
+    leaderElection:
+      leaderElect: true
+      resourceName: acad1e21.huisebug.org
+kind: ConfigMap
+metadata:
+  name: k8simage-operator-manager-config
+  namespace: k8simage-operator-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: k8simage-operator-controller-manager
+  namespace: k8simage-operator-system
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 8888
+  selector:
+    control-plane: controller-manager
+  type: NodePort
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: k8simage-operator-controller-manager-metrics-service
+  namespace: k8simage-operator-system
+spec:
+  ports:
+  - name: https
+    port: 8443
+    protocol: TCP
+    targetPort: https
+  selector:
+    control-plane: controller-manager
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    control-plane: controller-manager-mysql
+  name: k8simage-operator-controller-manager-mysql
+  namespace: k8simage-operator-system
+spec:
+  ports:
+  - name: mysql
+    port: 3306
+    protocol: TCP
+    targetPort: 3306
+  selector:
+    control-plane: controller-manager-mysql
+  type: NodePort
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    control-plane: controller-manager-ui
+  name: k8simage-operator-controller-manager-ui
+  namespace: k8simage-operator-system
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    control-plane: controller-manager-ui
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: k8simage-operator-controller-manager
+  namespace: k8simage-operator-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        control-plane: controller-manager
+    spec:
+      containers:
+      - args:
+        - --secure-listen-address=0.0.0.0:8443
+        - --upstream=http://127.0.0.1:8080/
+        - --logtostderr=true
+        - --v=0
+        image: quay.io/brancz/kube-rbac-proxy:v0.8.0
+        name: kube-rbac-proxy
+        ports:
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 5m
+            memory: 64Mi
+      - args:
+        - --health-probe-bind-address=:8081
+        - --metrics-bind-address=127.0.0.1:8080
+        - --leader-elect
+        command:
+        - /manager
+        image: huisebug/k8simage-operator:v1
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 60
+          periodSeconds: 20
+        name: manager
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+        volumeMounts:
+        - mountPath: /etc/kubernetes
+          name: yamlfile
+      dnsPolicy: ClusterFirst
+      nodeSelector:
+        kubernetes.io/hostname: k8s-m1
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      serviceAccountName: k8simage-operator-controller-manager
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - hostPath:
+          path: /etc/kubernetes
+        name: yamlfile
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    control-plane: controller-manager-mysql
+  name: k8simage-operator-controller-manager-mysql
+  namespace: k8simage-operator-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: controller-manager-mysql
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        control-plane: controller-manager-mysql
+    spec:
+      containers:
+      - env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: mysql@u214Pp178FQ
+        image: mysql:5.7
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          initialDelaySeconds: 60
+          periodSeconds: 600
+          tcpSocket:
+            port: 3306
+        name: mysql
+        ports:
+        - containerPort: 3306
+          name: mysql
+          protocol: TCP
+        readinessProbe:
+          initialDelaySeconds: 60
+          periodSeconds: 600
+          tcpSocket:
+            port: 3306
+        stdin: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        tty: true
+        volumeMounts:
+        - mountPath: /var/lib/mysql
+          name: data
+          subPath: mysql
+        - mountPath: /docker-entrypoint-initdb.d
+          name: initdb
+        - mountPath: /etc/localtime
+          name: time
+      dnsPolicy: ClusterFirst
+      nodeSelector:
+        kubernetes.io/hostname: k8s-m1
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - hostPath:
+          path: /data/k8simage-operator/mysql
+          type: DirectoryOrCreate
+        name: data
+      - hostPath:
+          path: /etc/localtime
+        name: time
+      - configMap:
+          defaultMode: 256
+          items:
+          - key: initdb.sh
+            mode: 511
+            path: initdb.sh
+          name: k8simage-operator-initdb
+          optional: false
+        name: initdb
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    control-plane: controller-manager-ui
+  name: k8simage-operator-controller-manager-ui
+  namespace: k8simage-operator-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: controller-manager-ui
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        control-plane: controller-manager-ui
+    spec:
+      containers:
+      - image: huisebug/k8simage-operator-ui:latest
+        imagePullPolicy: Always
+        livenessProbe:
+          initialDelaySeconds: 10
+          periodSeconds: 60
+          tcpSocket:
+            port: 80
+        name: ui
+        readinessProbe:
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          tcpSocket:
+            port: 80
+        resources:
+          limits:
+            memory: 212Mi
+          requests:
+            memory: 66Mi
+        volumeMounts:
+        - mountPath: /etc/nginx/conf.d/
+          name: conf
+      volumes:
+      - configMap:
+          defaultMode: 256
+          items:
+          - key: ui.conf
+            path: ui.conf
+          name: k8simage-operator-controller-manager-ui
+          optional: false
+        name: conf

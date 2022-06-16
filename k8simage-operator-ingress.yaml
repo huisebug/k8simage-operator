@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    # 认证方式
+    nginx.ingress.kubernetes.io/auth-type: basic
+    # 认证来源从同命名空间下需要存在对应secret
+    nginx.ingress.kubernetes.io/auth-secret: nginx-ingress-auth
+    # 使用适当的上下文显示为什么需要身份验证的消息，非必须的，可以不配置
+    nginx.ingress.kubernetes.io/auth-realm: "Authentication Required - huisebug"
+  name: k8simage-operator-system
+  namespace: k8simage-operator-system
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: k8simage-operator.huisebug.io
+    http:
+      paths:
+      - pathType: Prefix
+        path: /
+        backend:
+          service:
+            name: k8simage-operator-controller-manager-ui
+            port:
+              number: 80
